@@ -14,12 +14,11 @@ import St from 'gi://St';
 
 import {ClipShadowEffect} from '../effect/clip_shadow_effect.js';
 import {RoundedCornersEffect} from '../effect/rounded_corners_effect.js';
+import {FOCUSED_SHADOW, UNFOCUSED_SHADOW} from '../utils/config.js';
 import {
     CLIP_SHADOW_EFFECT,
     ROUNDED_CORNERS_EFFECT,
 } from '../utils/constants.js';
-import {logDebug} from '../utils/log.js';
-import {getPref} from '../utils/settings.js';
 import {
     computeBounds,
     computeShadowActorOffset,
@@ -33,8 +32,6 @@ import {
 } from './utils.js';
 
 export function onAddEffect(actor: RoundedWindowActor) {
-    logDebug(`Adding effect to ${actor?.metaWindow.title}`);
-
     const win = actor.metaWindow;
 
     // Skip windows that already have the effect to prevent a memory leak
@@ -43,7 +40,6 @@ export function onAddEffect(actor: RoundedWindowActor) {
     const hasEffect = effect && windowInfo;
 
     if (!shouldEnableEffect(win) || hasEffect) {
-        logDebug(`Skipping ${win.title}`);
         return;
     }
 
@@ -120,7 +116,6 @@ export function onMinimize(actor: RoundedWindowActor): void {
     const shadow = actor.rwcCustomData?.shadow;
     const roundedCornersEffect = getRoundedCornersEffect(actor);
     if (magicLampEffect && shadow && roundedCornersEffect) {
-        logDebug('Minimizing with magic lamp effect');
         shadow.visible = false;
         roundedCornersEffect.enabled = false;
     }
@@ -141,7 +136,6 @@ export function onUnminimize(actor: RoundedWindowActor): void {
         const id = timer.connect('new-frame', source => {
             // Wait until the effect is 98% completed
             if (source.get_progress() > 0.98) {
-                logDebug('Unminimizing with magic lamp effect');
                 shadow.visible = true;
                 roundedCornersEffect.enabled = true;
                 source.disconnect(id);
@@ -167,8 +161,6 @@ export function onRestacked(): void {
 export const onSizeChanged = refreshRoundedCorners;
 
 export const onFocusChanged = refreshRoundedCorners;
-
-export const onSettingsChanged = refreshAllRoundedCorners;
 
 /**
  * Create the shadow actor for a window.
@@ -220,8 +212,8 @@ function refreshShadow(actor: RoundedWindowActor) {
     }
 
     const shadowSettings = win.appears_focused
-        ? getPref('focused-shadow')
-        : getPref('unfocused-shadow');
+        ? FOCUSED_SHADOW
+        : UNFOCUSED_SHADOW;
 
     const {borderRadius, padding} = getRoundedCornersCfg(win);
 
@@ -285,11 +277,4 @@ function refreshRoundedCorners(actor: RoundedWindowActor): void {
     });
 
     refreshShadow(actor);
-}
-
-/** Refresh rounded corners settings for all windows. */
-function refreshAllRoundedCorners() {
-    for (const actor of global.get_window_actors()) {
-        refreshRoundedCorners(actor);
-    }
 }

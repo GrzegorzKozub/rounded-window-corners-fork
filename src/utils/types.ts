@@ -30,11 +30,6 @@ export type RoundedCornerSettings = {
     enabled: boolean;
 };
 
-/** Rounded corner settings exceptions for specific windows. */
-export type CustomRoundedCornerSettings = {
-    [wmClass: string]: RoundedCornerSettings;
-};
-
 /** Window shadow properties. */
 export type BoxShadow = {
     opacity: number;

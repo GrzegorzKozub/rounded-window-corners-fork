@@ -26,9 +26,6 @@ jobs:
       - name: Set up just
         uses: extractions/setup-just@v2
 
-      - name: Install gettext
-        run: sudo apt install gettext
-
       - name: Build the extension
         run: just build
 

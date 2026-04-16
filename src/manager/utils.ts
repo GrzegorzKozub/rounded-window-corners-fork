@@ -2,7 +2,7 @@
 
 import type Clutter from 'gi://Clutter';
 import type {RoundedCornersEffect} from '../effect/rounded_corners_effect.js';
-import type {Bounds, RoundedCornerSettings} from '../utils/types.js';
+import type {Bounds, BoxShadow, RoundedCornerSettings} from '../utils/types.js';
 
 import Gio from 'gi://Gio';
 import Meta from 'gi://Meta';
@@ -10,13 +10,18 @@ import St from 'gi://St';
 
 import {boxShadowCss} from '../utils/box_shadow.js';
 import {
+    FOCUSED_SHADOW,
+    ROUNDED_CORNER_SETTINGS,
+    SKIP_LIBADWAITA_APP,
+    SKIP_LIBHANDY_APP,
+    TWEAK_KITTY_TERMINAL,
+} from '../utils/config.js';
+import {
     APP_SHADOWS,
     ROUNDED_CORNERS_EFFECT,
     SHADOW_PADDING,
 } from '../utils/constants.js';
 import {readFile} from '../utils/file.js';
-import {logDebug} from '../utils/log.js';
-import {getPref} from '../utils/settings.js';
 
 // Cache mutter settings to avoid creating a new Gio.Settings object on every
 // call to windowScaleFactor (which is called per-frame during overview animations).
@@ -75,26 +80,13 @@ export function unwrapActor(actor: Meta.WindowActor): Clutter.Actor | null {
 }
 
 /**
- * Get the correct rounded corner setting for a window (custom settings if a
- * window has custom overrides, global settings otherwise).
+ * Get the rounded corner settings for a window.
  *
- * @param win - The window to get the settings for.
- * @returns The matching settings object.
+ * @param _win - The window to get the settings for.
+ * @returns The settings object.
  */
-export function getRoundedCornersCfg(win: Meta.Window): RoundedCornerSettings {
-    const globalCfg = getPref('global-rounded-corner-settings');
-    const customCfgList = getPref('custom-rounded-corner-settings');
-
-    const wmClass = win.get_wm_class_instance();
-    if (
-        wmClass == null ||
-        !customCfgList[wmClass] ||
-        !customCfgList[wmClass].enabled
-    ) {
-        return globalCfg;
-    }
-
-    return customCfgList[wmClass];
+export function getRoundedCornersCfg(_win: Meta.Window): RoundedCornerSettings {
+    return ROUNDED_CORNER_SETTINGS;
 }
 
 // Weird TypeScript magic :)
@@ -153,7 +145,7 @@ export function computeBounds(
     // Kitty draws its window decoration by itself, so we need to manually
     // clip its shadow and recompute the outer bounds for it.
     if (
-        getPref('tweak-kitty-terminal') &&
+        TWEAK_KITTY_TERMINAL &&
         actor.metaWindow.get_client_type() === Meta.WindowClientType.WAYLAND &&
         actor.metaWindow.get_wm_class_instance() === 'kitty'
     ) {
@@ -224,19 +216,15 @@ export function computeShadowActorOffset(
 export function updateShadowActorStyle(
     win: Meta.Window,
     actor: St.Bin,
-    borderRadius = getPref('global-rounded-corner-settings').borderRadius,
-    shadow = getPref('focused-shadow'),
-    padding = getPref('global-rounded-corner-settings').padding,
+    borderRadius = ROUNDED_CORNER_SETTINGS.borderRadius,
+    shadow: BoxShadow = FOCUSED_SHADOW,
+    padding = ROUNDED_CORNER_SETTINGS.padding,
 ) {
     const {left, right, top, bottom} = padding;
 
     // Increase border_radius when smoothing is on.
-    // Read global settings once to avoid repeated GSettings deserializations.
-    let adjustedBorderRadius = borderRadius;
-    const globalCfg = getPref('global-rounded-corner-settings');
-    if (globalCfg !== null) {
-        adjustedBorderRadius *= 1.0 + globalCfg.smoothing;
-    }
+    const adjustedBorderRadius =
+        borderRadius * (1.0 + ROUNDED_CORNER_SETTINGS.smoothing);
 
     // If there are two monitors with different scale factors, the scale of
     // the window may be different from the scale that has to be applied in
@@ -252,13 +240,10 @@ export function updateShadowActorStyle(
 
     const child = actor.firstChild as St.Bin;
 
-    const hideShadowForMaximizedFullscreen =
-        !getPref('keep-shadow-for-maximized-fullscreen') &&
-        (win.maximizedHorizontally ||
-            win.maximizedVertically ||
-            win.fullscreen);
+    const hideShadow =
+        win.maximizedHorizontally || win.maximizedVertically || win.fullscreen;
 
-    const newChildStyle = hideShadowForMaximizedFullscreen
+    const newChildStyle = hideShadow
         ? 'opacity: 0;'
         : `background: white;
                border-radius: ${adjustedBorderRadius * scale}px;
@@ -291,16 +276,8 @@ export function shouldEnableEffect(
         return false;
     }
 
-    // Skip blacklisted applications.
     const wmClass = win.get_wm_class_instance();
     if (wmClass == null) {
-        logDebug(`Warning: wm_class_instance of ${win}: ${win.title} is null`);
-        return false;
-    }
-    // handles blacklist / whitelist
-    const isException = getPref('blacklist').includes(wmClass);
-    const enableExceptions = getPref('whitelist');
-    if (isException !== enableExceptions) {
         return false;
     }
 
@@ -313,27 +290,18 @@ export function shouldEnableEffect(
         return false;
     }
 
-    // Skip libhandy/libadwaita applications according to settings.
+    // Skip libhandy/libadwaita applications according to config.
     const appType = win._appType ?? getAppType(win);
     win._appType = appType; // Cache the result.
-    logDebug(`Check Type of window:${win.title} => ${appType}`);
 
-    if (
-        getPref('skip-libadwaita-app') &&
-        appType === 'LibAdwaita' &&
-        !isException
-    ) {
+    if (SKIP_LIBADWAITA_APP && appType === 'LibAdwaita') {
         return false;
     }
-    if (
-        getPref('skip-libhandy-app') &&
-        appType === 'LibHandy' &&
-        !isException
-    ) {
+    if (SKIP_LIBHANDY_APP && appType === 'LibHandy') {
         return false;
     }
 
-    // Skip maximized/fullscreen windows according to settings.
+    // Skip maximized/fullscreen windows.
     const maximized = win.maximizedHorizontally || win.maximizedVertically;
     const fullscreen = win.fullscreen;
     const cfg = getRoundedCornersCfg(win);
